@@ -5,7 +5,7 @@
  * Author URI: https://rudrastyh.com
  * Description: Adds translations support to crossposting.
  * Plugin URI: https://rudrastyh.com/support/crosspost-with-polylang
- * Version: 1.1
+ * Version: 1.2
  */
 
  if( ! class_exists( 'Rudr_Simple_WP_Crosspost_Polylang' ) ) {
@@ -17,6 +17,8 @@
 			add_filter( 'rudr_swc_pre_request_url', array( $this, 'add_post_language_and_translations' ), 25, 3 );
 			add_filter( 'rudr_swc_pre_term_request_url', array( $this, 'add_term_language_and_translations' ), 25, 3 );
 			add_filter( 'rudr_swc_pre_terms_request_url', array( $this, 'get_terms_of_post_language' ), 25, 4 );
+      // WooCommerce products, SKU connection
+      add_filter( 'rudr_swc_pre_products_request_url', array( $this, 'get_products_by_sku_by_language' ), 25, 2 );
 
 		}
 
@@ -137,6 +139,23 @@
 			return $crossposted_term_id;
 
 		}
+
+    public function get_products_by_sku_by_language( $url, $product_id ) {
+
+      // Polylang check
+			if( ! function_exists( 'pll_get_post_language' ) ) {
+				return $url;
+			}
+
+			// Add post current language first
+			$lang = pll_get_post_language( $product_id );
+			if( $lang ) {
+				$url = add_query_arg( 'lang', $lang, $url );
+			}
+
+      return $url;
+
+    }
 
 	}
 
