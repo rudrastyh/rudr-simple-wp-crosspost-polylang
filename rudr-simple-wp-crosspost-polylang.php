@@ -5,7 +5,7 @@
  * Author URI: https://rudrastyh.com
  * Description: Adds translations support to crossposting.
  * Plugin URI: https://rudrastyh.com/support/crosspost-with-polylang
- * Version: 1.2
+ * Version: 1.3
  */
 
  if( ! class_exists( 'Rudr_Simple_WP_Crosspost_Polylang' ) ) {
@@ -14,16 +14,19 @@
 
  		public function __construct() {
 
-			add_filter( 'rudr_swc_pre_request_url', array( $this, 'add_post_language_and_translations' ), 25, 3 );
-			add_filter( 'rudr_swc_pre_term_request_url', array( $this, 'add_term_language_and_translations' ), 25, 3 );
-			add_filter( 'rudr_swc_pre_terms_request_url', array( $this, 'get_terms_of_post_language' ), 25, 4 );
+			add_filter( 'rudr_swc_pre_request_url', array( $this, 'post_language_and_translations' ), 25, 3 );
+      // taxonomies
+			add_filter( 'rudr_swc_pre_term_request_url', array( $this, 'term_language_and_translations' ), 25, 3 );
+			add_filter( 'rudr_swc_pre_terms_request_url', array( $this, 'terms_by_post_language' ), 25, 4 );
       // WooCommerce products, SKU connection
-      add_filter( 'rudr_swc_pre_products_request_url', array( $this, 'get_products_by_sku_by_language' ), 25, 2 );
-
+      add_filter( 'rudr_swc_pre_products_request_url', array( $this, 'products_by_sku_and_by_language' ), 25, 2 );
+      // bulk add-on
+      add_filter( 'rudr_swc_pre_batch_request_url', array( $this, 'product_language_to_batch' ), 25, 2 );
+      add_action( 'admin_footer', array( $this, 'check_lang_in_bulk_actions' ) );
 		}
 
 		// Add post language and translations to the REST API endpoint
-		public function add_post_language_and_translations( $url, $post_id, $blog ) {
+		public function post_language_and_translations( $url, $post_id, $blog ) {
 
 			// Polylang check
 			if( ! function_exists( 'pll_get_post_language' ) ) {
@@ -52,7 +55,7 @@
 		}
 
 		// Add term language and translations to the REST API endpoint
-		public function add_term_language_and_translations( $url, $term_id, $blog ) {
+		public function term_language_and_translations( $url, $term_id, $blog ) {
 
 			// Polylang check
 			if( ! function_exists( 'pll_get_term_language' ) ) {
@@ -79,7 +82,7 @@
 		}
 
 		// when using get_synced_term_ids() function, apply a post language to the REST API endpoint
-		public function get_terms_of_post_language( $url, $slugs, $blog, $post_id ) {
+		public function terms_by_post_language( $url, $slugs, $blog, $post_id ) {
 			// Polylang check
 			if( ! function_exists( 'pll_get_post_language' ) ) {
 				return $url;
@@ -140,7 +143,7 @@
 
 		}
 
-    public function get_products_by_sku_by_language( $url, $product_id ) {
+    public function products_by_sku_and_by_language( $url, $product_id ) {
 
       // Polylang check
 			if( ! function_exists( 'pll_get_post_language' ) ) {
@@ -155,6 +158,72 @@
 
       return $url;
 
+    }
+
+    public function product_language_to_batch( $url, $body ) {
+
+      // Polylang check
+      if( ! function_exists( 'pll_get_post_language' ) ) {
+        return $url;
+      }
+
+      // WooCommerce REST API only
+      if( false === strpos( $url, 'wc/v3/products/batch' ) ) {
+        return $url;
+      }
+
+      // find the first product to find out its language
+      $first_product_id = ! empty( $body[ 'create' ][0][ 'source_product_id' ] )
+        ? $body[ 'create' ][0][ 'source_product_id' ]
+        : ( ! empty( $body[ 'update' ][0][ 'source_product_id' ] ) ? $body[ 'update' ][0][ 'source_product_id' ] : 0 );
+
+      if( ! $first_product_id ) {
+        return $url;
+      }
+
+      // we simply add the language of the first product to URL
+      $lang = pll_get_post_language( $first_product_id );
+      if( $lang ) {
+        $url = add_query_arg( 'lang', $lang, $url );
+      }
+
+      return $url;
+
+    }
+
+    public function check_lang_in_bulk_actions() {
+
+      $screen = get_current_screen();
+
+      if( ! class_exists( 'Rudr_Simple_WP_Crosspost' ) || ! function_exists( 'pll_current_language' ) ) {
+        return;
+      }
+
+      if( ! Rudr_Simple_WP_Crosspost::is_woocommerce() || 'edit-product' !== $screen->id ) {
+        return;
+      }
+
+      // language is set, all is good
+      if( pll_current_language() ) {
+        return;
+      }
+
+      ?><script>
+      jQuery( function( $ ) {
+
+        $( 'select[name="action"]' ).change( function( e ) {
+          const bulkAction = $(this).val();
+
+          if( bulkAction.startsWith( 'crosspost_to_' ) ) {
+            alert( 'In order to bulk sync products, please select a language first.' );
+            $(this).next().prop( 'disabled', true );
+          } else {
+            $(this).next().prop( 'disabled', false );
+          }
+        } );
+      } );
+      </script>
+      <?php
     }
 
 	}
