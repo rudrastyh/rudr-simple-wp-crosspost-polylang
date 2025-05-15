@@ -5,7 +5,7 @@
  * Author URI: https://rudrastyh.com
  * Description: Adds translations support to crossposting.
  * Plugin URI: https://rudrastyh.com/support/crosspost-with-polylang
- * Version: 1.3
+ * Version: 1.4
  */
 
  if( ! class_exists( 'Rudr_Simple_WP_Crosspost_Polylang' ) ) {
@@ -21,8 +21,7 @@
       // WooCommerce products, SKU connection
       add_filter( 'rudr_swc_pre_products_request_url', array( $this, 'products_by_sku_and_by_language' ), 25, 2 );
       // bulk add-on
-      add_filter( 'rudr_swc_pre_batch_request_url', array( $this, 'product_language_to_batch' ), 25, 2 );
-      add_action( 'admin_footer', array( $this, 'check_lang_in_bulk_actions' ) );
+      add_action( 'rudr_swc_pre_crosspost_product_data', array( $this, 'batch_product_language_and_translations' ), 25, 3 );
 		}
 
 		// Add post language and translations to the REST API endpoint
@@ -160,70 +159,32 @@
 
     }
 
-    public function product_language_to_batch( $url, $body ) {
+    public function batch_product_language_and_translations( $product_data, $blog, $product ) {
 
       // Polylang check
       if( ! function_exists( 'pll_get_post_language' ) ) {
-        return $url;
+        return $product_data;
       }
 
-      // WooCommerce REST API only
-      if( false === strpos( $url, 'wc/v3/products/batch' ) ) {
-        return $url;
-      }
-
-      // find the first product to find out its language
-      $first_product_id = ! empty( $body[ 'create' ][0][ 'source_product_id' ] )
-        ? $body[ 'create' ][0][ 'source_product_id' ]
-        : ( ! empty( $body[ 'update' ][0][ 'source_product_id' ] ) ? $body[ 'update' ][0][ 'source_product_id' ] : 0 );
-
-      if( ! $first_product_id ) {
-        return $url;
-      }
-
-      // we simply add the language of the first product to URL
-      $lang = pll_get_post_language( $first_product_id );
+      // Add post current language first
+      $lang = pll_get_post_language( $product->get_id() );
       if( $lang ) {
-        $url = add_query_arg( 'lang', $lang, $url );
+        $product_data[ 'lang' ] = $lang;
       }
 
-      return $url;
-
-    }
-
-    public function check_lang_in_bulk_actions() {
-
-      $screen = get_current_screen();
-
-      if( ! class_exists( 'Rudr_Simple_WP_Crosspost' ) || ! function_exists( 'pll_current_language' ) ) {
-        return;
-      }
-
-      if( ! Rudr_Simple_WP_Crosspost::is_woocommerce() || 'edit-product' !== $screen->id ) {
-        return;
-      }
-
-      // language is set, all is good
-      if( pll_current_language() ) {
-        return;
-      }
-
-      ?><script>
-      jQuery( function( $ ) {
-
-        $( 'select[name="action"]' ).change( function( e ) {
-          const bulkAction = $(this).val();
-
-          if( bulkAction.startsWith( 'crosspost_to_' ) ) {
-            alert( 'In order to bulk sync products, please select a language first.' );
-            $(this).next().prop( 'disabled', true );
-          } else {
-            $(this).next().prop( 'disabled', false );
+      // add other languages (if there were crossposted)
+      $translations = pll_get_post_translations( $product->get_id() );
+      if( $translations ) {
+        $product_data[ 'translations' ] = array();
+        foreach( $translations as $lang => $id ) {
+          if( $crossposted_id = Rudr_Simple_Woo_Crosspost::is_crossposted_product( wc_get_product( $id ), $blog ) ) {
+            $product_data[ 'translations' ][ $lang ] = $crossposted_id;
           }
-        } );
-      } );
-      </script>
-      <?php
+        }
+      }
+
+      return $product_data;
+
     }
 
 	}
